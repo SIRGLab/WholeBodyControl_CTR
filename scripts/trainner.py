@@ -97,13 +97,15 @@ class ODE(nn.Module):
         return sol  # (timesteps, batch_size, 14)
 
 class NeuralODEController(nn.Module):
-    def __init__(self,number_of_segment=3, down_sample=10,taget_pos_size=3):
+    def __init__(self,number_of_segment=3, down_sample=10, taget_pos_size=3,
+                 min_action_values=[-0.03, -0.015, -0.015, -0.03, -0.015, -0.015, -0.03, -0.015, -0.015],
+                 max_action_values=[0.03,   0.015, 0.015, 0.03, 0.015, 0.015, 0.03, 0.015, 0.015]):
         super(NeuralODEController, self).__init__()
         self._number_of_segment = number_of_segment
         self._down_sample = down_sample
         self._taget_pos_size = taget_pos_size
         self.net = nn.Sequential(
-            nn.Linear(self._number_of_segment*3 + 3*self._down_sample + self._taget_pos_size, 256),  # 3*2 current u, 10*current state,  state variables + 3 target positions
+            nn.Linear(self._number_of_segment*3 + self._down_sample*3 + self._taget_pos_size, 256),  # 3*2 current u, 10*current state,  state variables + 3 target positions
             nn.LeakyReLU(),
             nn.Linear(256, 256),
             nn.LeakyReLU(),
@@ -114,8 +116,8 @@ class NeuralODEController(nn.Module):
         )
         
         # Define desired output ranges for actions
-        self.min_action_values = torch.tensor([-0.03, -0.015, -0.015, -0.03, -0.015, -0.015, -0.03, -0.015, -0.015],device=device)  # replace with your desired mins
-        self.max_action_values = torch.tensor([0.03,   0.015, 0.015, 0.03, 0.015, 0.015, 0.03, 0.015, 0.015],device=device)        # replace with your desired maxs
+        self.min_action_values = torch.tensor(min_action_values,device=device)  # replace with your desired mins
+        self.max_action_values = torch.tensor(max_action_values,device=device)        # replace with your desired maxs
         self.initialize_weights()
 
     def initialize_weights(self):
