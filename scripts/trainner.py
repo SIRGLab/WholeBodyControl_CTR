@@ -7,7 +7,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 
-
 device = torch.device('cuda:' + str(0) if torch.cuda.is_available() else 'cpu')
 
 class ODE(nn.Module):
@@ -66,7 +65,7 @@ class ODE(nn.Module):
         y0_batch[:, 13] = uy
         
         sol = None
-        number_of_segment = 2  
+        number_of_segment = 3  
         for n in range(number_of_segment):
             
             # Determine the maximum length in the batch to ensure consistent integration steps
@@ -98,32 +97,25 @@ class ODE(nn.Module):
         return sol  # (timesteps, batch_size, 14)
 
 class NeuralODEController(nn.Module):
-    def __init__(self):
+    def __init__(self,number_of_segment=3, down_sample=10,taget_pos_size=3):
         super(NeuralODEController, self).__init__()
+        self._number_of_segment = number_of_segment
+        self._down_sample = down_sample
+        self._taget_pos_size = taget_pos_size
         self.net = nn.Sequential(
-            # nn.Linear(10*3 + 3, 256),  # 10*3 state variables + 3 target positions
-            # nn.Linear(3, 256),  # 10*3 state variables + 3 target positions
-            nn.Linear(3*2+3+3, 256),  # 3*2 current u, current state,  state variables + 3 target positions
+            nn.Linear(self._number_of_segment*3 + 3*self._down_sample + self._taget_pos_size, 256),  # 3*2 current u, 10*current state,  state variables + 3 target positions
             nn.LeakyReLU(),
             nn.Linear(256, 256),
             nn.LeakyReLU(),
             nn.Linear(256, 256),
             nn.LeakyReLU(),
-            nn.Linear(256, 6),  # Outputs 3 action variables
+            nn.Linear(256, 9),  # Outputs 3 action variables
             nn.Tanh()
-            # nn.Linear(3, 64),  # 10*3 state variables + 3 target positions
-            # nn.LeakyReLU(),
-            # nn.Linear(64, 64),
-            # nn.LeakyReLU(),
-            # nn.Linear(64, 64),
-            # nn.LeakyReLU(),
-            # nn.Linear(64, 6),  # Outputs 3 action variables
-            # nn.Tanh()
         )
         
         # Define desired output ranges for actions
-        self.min_action_values = torch.tensor([-0.03, -0.015, -0.015, -0.03, -0.015, -0.015],device=device)  # replace with your desired mins
-        self.max_action_values = torch.tensor([0.03,   0.015, 0.015, 0.03, 0.015, 0.015],device=device)        # replace with your desired maxs
+        self.min_action_values = torch.tensor([-0.03, -0.015, -0.015, -0.03, -0.015, -0.015, -0.03, -0.015, -0.015],device=device)  # replace with your desired mins
+        self.max_action_values = torch.tensor([0.03,   0.015, 0.015, 0.03, 0.015, 0.015, 0.03, 0.015, 0.015],device=device)        # replace with your desired maxs
         self.initialize_weights()
 
     def initialize_weights(self):
@@ -134,16 +126,10 @@ class NeuralODEController(nn.Module):
                     init.constant_(m.bias, 0)
 
 
-
     def forward(self, action, state, target):
         # Concatenate state and target
         x = torch.cat([action, state, target], dim=1)
-        # u = self.net(x)/20.0
-        # return u
         
-        # Concatenate state and target
-        # x = torch.cat([state, target], dim=1)
-        # x = target
         # Original output from network, range [-1, 1] due to Tanh
         tanh_output = self.net(x)
         
@@ -169,80 +155,45 @@ if __name__ == "__main__":
     sf = ODE().to(device)
     controller = NeuralODEController().to(device)
     
-    controller.load_state_dict(torch.load("/home/mohammad/SoftRobot_CORL23/trainedModel/model_controller_20240903-083139.zip"))
-    # Plotting the results after training
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_title('Visualizer-1.01')
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_zlabel("z (m)")
-    ax.set_xlim([-0.08, 0.08])
-    ax.set_ylim([-0.08, 0.08])
-    ax.set_zlim([-0.0, 0.15])
-    
-    batch_size = 1
-    for i in range(10):
-        
-        # reset
-        # reset_actions = torch.tensor([0,0,0,0,0.0,0.0]).repeat(batch_size).reshape([batch_size,6])
-        reset_actions = (torch.randint(-150,150,[batch_size,6])/10000.0).to(device)  # Random targets for tip position
-        reset_states  = sf.odeStepFull(reset_actions)
-        
-        # reset_states  = downsample_simple(reset_states,10)[:,:,:3].reshape(batch_size,3*10)   
-        # Generate random targets for the tip of the robot
-        # current_state = torch.zeros(batch_size, 14,requires_grad=True).to(device)  # initial states are zeros
-        
-        # target_tip_position = (torch.randint(-400,400,[batch_size,3])/10000.0).to(device)  # Random targets for tip position
-        # target_tip_position[:,-1] = 0.1 + torch.randint(-200,200,[batch_size])/10000.0
-        
-        target_tip_position = reset_states[-1,:,:3] + (torch.randint(-500,500,[batch_size,3])/100000.0).to(device)  # Random targets for tip position
-        # target_tip_position[:,-1] = 0.1 + torch.randint(-200,200,[batch_size])/100000.0
-
-        # Forward pass through neural network to get actions
-        # actions = controller(reset_states, target_tip_position)
-        actions = controller(reset_actions,reset_states[-1,:,:3], target_tip_position)
-    
-        # with torch.no_grad():    
-        states_batch = sf.odeStepFull(actions)
-       
-        
-           
-        for i in range(states_batch.size(1)):
-            states = states_batch[:, i, :].detach().cpu().numpy()
-            targ = target_tip_position.detach().cpu().numpy()
-            ax.plot(states[:, 0], states[:, 1], states[:, 2],linewidth = 2)
-            ax.plot(targ[0,0], targ[0,1], targ[0,2],'r-o')
-            plt.pause(5)
-            
-    plt.show()
-    exit()
-
-    
-    # Example: Training Loop
     batch_size = 500
-    num_epochs = 10000
+    num_epochs = 20000
+    down_sample = 10
+    obs = torch.Tensor([0.0,0.0,0.1]).to(device) 
+        
+  
     optimizer  = torch.optim.Adam(controller.parameters(), lr=0.001)
     loss_fn    = nn.MSELoss()
 
     for epoch in range(num_epochs):
-        # reset
-        # reset_actions = torch.tensor([0,0,0,0,0.0,0.0]).repeat(batch_size).reshape([batch_size,6])
-        reset_actions = (torch.randint(-150,150,[batch_size,6])/10000.0).to(device)  # Random targets for tip position
+        reset_actions = (torch.randint(-150,150,[batch_size,9])/10000.0).to(device)  # Random targets for tip position
         reset_states  = sf.odeStepFull(reset_actions)
+        down_sample = 10
+        reset_states_down_sample  = downsample_simple(reset_states,down_sample)[:,:,:3].reshape(batch_size,3*down_sample)   
+
         
-        # reset_states  = downsample_simple(reset_states,10)[:,:,:3].reshape(batch_size,3*10)   
         target_tip_position = reset_states[-1,:,:3] + (torch.randint(-500,500,[batch_size,3])/100000.0).to(device)  # Random targets for tip position
         
         # Forward pass through neural network to get actions
-        actions = controller(reset_actions, reset_states[-1,:,:3], target_tip_position)
+        actions = controller(reset_actions, reset_states_down_sample, target_tip_position)
     
-        # with torch.no_grad():    
+    
         states_batch = sf.odeStepFull(actions)
+        
+        states_down_sample  = downsample_simple(states_batch,down_sample)[:,:,:3]   
+        
+        s = states_down_sample[:,:,:3]
+        dist = torch.linalg.norm(s-obs,dim=2)
+        
+        obs_loss = torch.mean(torch.lt(dist,0.01)*10.0)
+        
+        states_down_sample = states_down_sample.reshape(batch_size,3*down_sample)
        
         # Calculate loss using only the tip position (final state position)
-        final_tip_position = states_batch[-1, :, :3]  # (batch_size, 3)
-        loss = 1000*loss_fn(final_tip_position, target_tip_position) + 100*loss_fn(reset_actions, actions) 
+        final_tip_position = states_batch[-1, :, :3] 
+        loss = 5000*loss_fn(final_tip_position, target_tip_position) +\
+                100*loss_fn(reset_actions, actions) +\
+                200*loss_fn(states_down_sample, reset_states_down_sample)+\
+                obs_loss    
 
         # Backward pass
         optimizer.zero_grad()
@@ -276,8 +227,8 @@ if __name__ == "__main__":
     ax.set_ylim([-0.08, 0.08])
     ax.set_zlim([-0.0, 0.15])
     
-    for i in range(states_batch.size(1)):
-        states = states_batch[:, i, :].detach().cpu().numpy()
+    for t in range(states_batch.size(1)):
+        states = states_batch[:, t, :].detach().cpu().numpy()
         ax.plot(states[:, 0], states[:, 1], states[:, 2])
 
     plt.show()
