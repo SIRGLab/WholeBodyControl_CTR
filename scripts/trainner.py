@@ -167,7 +167,6 @@ if __name__ == "__main__":
     for epoch in range(num_epochs):
         reset_actions = (torch.randint(-150,150,[batch_size,9])/10000.0).to(device)  # Random targets for tip position
         reset_states  = sf.odeStepFull(reset_actions)
-        down_sample = 10
         reset_states_down_sample  = downsample_simple(reset_states,down_sample)[:,:,:3].reshape(batch_size,3*down_sample)   
 
         
