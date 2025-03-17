@@ -3,9 +3,7 @@ In this work, we present a novel synergistic framework for learning shape estima
 
 
 
-[Paper (ICRA2025)](https://arxiv.org/abs/2501.03859) 
-
-  <!-- &nbsp; &nbsp; [Video](https://youtu.be/IYqYS4ZQx6k)     -->
+[Paper (ICRA2025)](https://arxiv.org/abs/2501.03859)  &nbsp; &nbsp; [Video](https://youtu.be/SIR7hVi_Bd0)    
 
 
 <div align="center">
